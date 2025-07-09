@@ -1,20 +1,22 @@
 #include <iostream>
 #include <stdexcept>
+#include <cstring>
 #include <netinet/in.h>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 
 
-int get_sock_file_descriptor(const int& domain, const int& type, const int& protocol=0);
-int accept_client_connection(const int& file_descriptor);
-void set_sock_options(
+static int get_sock_file_descriptor(const int& domain, const int& type, const int& protocol=0);
+static int accept_client_connection(const int& file_descriptor);
+static void set_sock_options(
   const int& file_descriptor, const int& level, const int& optional_name, const int optional_value
 );
-void bind_sock_address(
+static void bind_sock_address(
   const int& file_descriptor, const int& family, const int& port, const int& ip
 );
-void bind_sock_listen(const int& file_descriptor, const int& backlog);
+static void bind_sock_listen(const int& file_descriptor, const int& backlog);
+static void read_client_input(const int& connfd);
 
 
 int main() {
@@ -40,6 +42,7 @@ int main() {
   while (true) {
     try {
       connfd = accept_client_connection(fd);
+      read_client_input(connfd);
     } catch (const std::exception& e) {
       std::cerr << "Error: " << e.what() << std::endl;
       continue;
@@ -51,11 +54,11 @@ int main() {
 }
 
 
-int get_sock_file_descriptor(const int& domain, const int& type, const int& protocol) {
+static int get_sock_file_descriptor(const int& domain, const int& type, const int& protocol) {
   return socket(domain, type, protocol);
 }
 
-int accept_client_connection(const int& file_descriptor) {
+static int accept_client_connection(const int& file_descriptor) {
   sockaddr_in client_addr = {};
   socklen_t addrlen = sizeof(client_addr);
   int connfd = accept(file_descriptor, (sockaddr *)& client_addr, &addrlen);
@@ -68,13 +71,13 @@ int accept_client_connection(const int& file_descriptor) {
   return connfd;
 }
 
-void set_sock_options(
+static void set_sock_options(
   const int& file_descriptor, const int& level, const int& optional_name, const int optional_value
 ) {
   setsockopt(file_descriptor, level, optional_name, &optional_value, sizeof(optional_value));
 }
 
-void bind_sock_address(
+static void bind_sock_address(
   const int& file_descriptor, const int& family, const int& port, const int& ip
 ) {
   sockaddr_in addr = {};
@@ -89,11 +92,29 @@ void bind_sock_address(
   }
 }
 
-void bind_sock_listen(const int& file_descriptor, const int& backlog) {
+static void bind_sock_listen(const int& file_descriptor, const int& backlog) {
   int rv = listen(file_descriptor, backlog);
 
   if (rv) {
     std::string error = "Cannot listen on socket";
     throw std::runtime_error(error);
   }
+  std::cout << "Server is ready to accept connection on 0.0.0.0:1234" << std::endl;
+
+}
+
+static void read_client_input(const int& connfd) {
+  char rbuf[64] = {}, wbuf[64] = {};
+  ssize_t n = read(connfd, rbuf, sizeof(rbuf)-1);
+
+  if (n < 0) {
+    std::string error = "Cannot read client input";
+    throw std::runtime_error(error);
+  }
+
+  std::cout << "Client says: " << rbuf << std::endl;
+  std::cout << "Send him message: ";
+  std::cin >> wbuf;
+  
+  write(connfd, wbuf, strlen(wbuf));
 }

@@ -1,12 +1,17 @@
 CXX = g++
 CXXFLAGS = -Wall -Wextra -O2
-TARGET = redis
-SRC = server.cpp
+TARGET01 = server
+TARGET02 = client
+SRC01 = server.cpp
+SRC02 = client.cpp
 
-all: $(TARGET)
+all: $(TARGET01) $(TARGET02)
 
-$(TARGET): $(SRC)
-	$(CXX) $(CXXFLAGS) $(SRC) -o $(TARGET)
+$(TARGET01): $(SRC01)
+	$(CXX) $(CXXFLAGS) $(SRC01) -o $(TARGET01)
+
+$(TARGET02): $(SRC02)
+	$(CXX) $(CXXFLAGS) $(SRC02) -o $(TARGET02)
 
 clean:
-	rm -f $(TARGET)
+	rm -f $(TARGET01) $(TARGET02)
