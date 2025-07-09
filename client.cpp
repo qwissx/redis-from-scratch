@@ -6,6 +6,11 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 
+#include "utils.h"
+
+
+static int32_t query(const int& fd, const char *text);
+
 
 int main() {
   int fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -25,19 +30,40 @@ int main() {
     return 1;
   }
 
-  char msg[64] = {};
-
-  std::cout << "Send message to server: ";
-  std::cin >> msg;
-
-  write(fd, msg, strlen(msg));
-
-  char rbuf[64] = {};
-  ssize_t n = read(fd, rbuf, sizeof(rbuf) - 1);
-  if (n < 0) {
-    std::cerr << "Cannot read from server";
+  try {
+    query(fd, "Hello1");
+    query(fd, "Hello2");
+  } catch (const std::exception& e) {
+    std::cerr << "Error: " << e.what() << std::endl;
   }
-  std::cout << "Server says: " << rbuf << std::endl;
 
   close(fd);
 }
+
+
+static int32_t query(const int& fd, const char *text) {
+  uint32_t len = (uint32_t)strlen(text);
+  if (len > k_max_msg) {
+    std::string error = "Message too long";
+    throw std::runtime_error(error); 
+  }
+
+  char wbuf[4 + k_max_msg];
+  memcpy(wbuf, &len, 4);
+  memcpy(&wbuf[4], text, len);
+ 
+  write_all(fd, wbuf, 4 + len);
+  char rbuf[4 + k_max_msg + 1];
+  errno = 0;
+  read_full(fd, rbuf, 4);
+
+  memcpy(&len, rbuf, 4);
+  if (len > k_max_msg) {
+    std::string error = "Message too long";
+    throw std::runtime_error(error); 
+  }
+
+  read_full(fd, &rbuf[4], len);
+  std::cout << "server says: " << std::string_view(&rbuf[4], len) << "\n";
+  return 0;
+}  

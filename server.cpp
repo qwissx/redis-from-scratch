@@ -1,10 +1,13 @@
 #include <iostream>
 #include <stdexcept>
 #include <cstring>
+#include <cassert>
 #include <netinet/in.h>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+
+#include "utils.h"
 
 
 static int get_sock_file_descriptor(const int& domain, const int& type, const int& protocol=0);
@@ -16,7 +19,7 @@ static void bind_sock_address(
   const int& file_descriptor, const int& family, const int& port, const int& ip
 );
 static void bind_sock_listen(const int& file_descriptor, const int& backlog);
-static void read_client_input(const int& connfd);
+static int32_t one_request(const int& fd);
 
 
 int main() {
@@ -27,12 +30,6 @@ int main() {
 
   try {
     bind_sock_address(fd, AF_INET, 1234, 0);
-  } catch (const std::exception& e) {
-    std::cerr << "Error: " << e.what() << std::endl;
-    return 1;
-  }
-
-  try {
     bind_sock_listen(fd, SOMAXCONN);
   } catch (const std::exception& e) {
     std::cerr << "Error: " << e.what() << std::endl;
@@ -42,10 +39,16 @@ int main() {
   while (true) {
     try {
       connfd = accept_client_connection(fd);
-      read_client_input(connfd);
     } catch (const std::exception& e) {
       std::cerr << "Error: " << e.what() << std::endl;
       continue;
+    }
+
+    while (true) {
+      int32_t err = one_request(connfd);
+      if (err) {
+        break;
+      } 
     }
     close(connfd);
   }
@@ -103,18 +106,35 @@ static void bind_sock_listen(const int& file_descriptor, const int& backlog) {
 
 }
 
-static void read_client_input(const int& connfd) {
-  char rbuf[64] = {}, wbuf[64] = {};
-  ssize_t n = read(connfd, rbuf, sizeof(rbuf)-1);
+static int32_t one_request(const int& connfd) {
+  char rbuf[4 + k_max_msg];
+  errno = 0;
+  int32_t err = -1;
 
-  if (n < 0) {
-    std::string error = "Cannot read client input";
-    throw std::runtime_error(error);
+  try {
+  err = read_full(connfd, rbuf, 4);
+  uint32_t len = 0;
+  memcpy(&len, rbuf, 4);
+
+  if (len > k_max_msg) {
+    std::cerr << "Error: message from client to long" << std::endl;
+    return -1;
   }
 
-  std::cout << "Client says: " << rbuf << std::endl;
-  std::cout << "Send him message: ";
-  std::cin >> wbuf;
-  
-  write(connfd, wbuf, strlen(wbuf));
+  err = read_full(connfd, &rbuf[4], len);
+  std::cout << "Client says: " << std::string_view(&rbuf[4], len) << std::endl;
+
+  const char reply[] = "world";
+  char wbuf[4 + sizeof(reply)];
+
+  len = (uint32_t)strlen(reply);
+
+  memcpy(wbuf, &len, 4);
+  memcpy(&wbuf[4], reply, len);
+
+  return write_all(connfd, wbuf, 4 + len);
+  } catch (const std::exception& e) {
+    std::cerr << "Error: " << e.what() << std::endl;
+    return err;
+  }
 }
