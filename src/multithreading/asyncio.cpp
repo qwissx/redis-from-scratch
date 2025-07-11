@@ -1,3 +1,4 @@
+#include <iostream>
 #include <fcntl.h>
 #include <stdexcept>
 #include <cstring>
@@ -5,8 +6,12 @@
 #include <poll.h>
 #include <cstdint>
 #include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <cassert>
 
 #include "asyncio.h"
+#include "../utils/utils.h"
 
 
 namespace async {
@@ -88,6 +93,89 @@ void handle_connection_socket(
     }
   }
 }
+
+Conn* handle_accept(const int& fd) {
+  sockaddr_in client_addr = {};
+  socklen_t addrlen = sizeof(client_addr);
+  int connfd = accept(fd, (sockaddr*)&client_addr, &addrlen);
+  if (connfd < 0) {
+    std::string error = "Cannot accept connection";
+    throw std::runtime_error(error);
+  }
+
+  fd_set_nonblock(connfd);
+  Conn *conn = new Conn();
+  conn->fd = connfd;
+  conn->want_read = true;
+  return conn;
+}
+
+static void buf_append(std::vector<uint8_t> &buf, const uint8_t *data, size_t len) {
+  buf.insert(buf.end(), data, data+len);
+}
+
+static void buf_consume(std::vector<uint8_t> &buf, size_t n) {
+  buf.erase(buf.begin(), buf.begin()+n);
+}
+
+bool try_one_request(Conn *conn) {
+  if (conn->incoming.size() < 4) {
+    return false;
+  }
+  uint32_t len = 0;
+  memcpy(&len, conn->incoming.data(), 4);
+  if (len > k_max_msg) {
+    conn->want_close = true;
+    return false;
+  }
+
+  if (4 + len > conn->incoming.size()) {
+    return false;
+  }
+
+  const uint8_t *request = &conn->incoming[4];
+
+  buf_append(conn->outgoing, (const uint8_t *)&len, 4);
+  buf_append(conn->outgoing, request, len);
+  
+  buf_consume(conn->incoming, 4+len);
+  return true;
+}
+
+void handle_read(Conn *conn) {
+  uint8_t buf[64 * 1024];
+  ssize_t rv = read(conn->fd, buf, sizeof(buf));
+  if (rv < 0) {
+    conn->want_close = true;
+    std::cerr << "Error: Cannot read file descriptor" << std::endl;
+    return;
+  }
+
+  buf_append(conn->incoming, buf, (size_t)rv);
+  try_one_request(conn);
+
+  if (conn->outgoing.size() > 0) {
+    conn->want_read = false;
+    conn->want_write = true;
+  }
+}
+
+void handle_write(Conn *conn) {
+  assert(conn->outgoing.size() > 0);
+  ssize_t rv = write(conn->fd, conn->outgoing.data(), conn->outgoing.size());
+  if (rv < 0) {
+    conn->want_close = true;
+    std::cerr << "Error: Cannot write to file descriptor" << std::endl;
+    return;
+  }
+
+  buf_consume(conn->outgoing, (size_t)rv);
+
+  if (conn->outgoing.size() == 0) {
+    conn->want_read = true;
+    conn->want_write = false;
+  }
+} 
  
 //namespace async
 }

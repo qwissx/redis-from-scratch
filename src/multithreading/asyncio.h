@@ -17,7 +17,7 @@ void prepare_poll_args(
   std::vector<Conn*>& fd2conn, 
   std::vector<pollfd>& poll_args
 );
-void wait_for_read(const std::vector<pollfd>& poll_args);
+void wait_for_read(std::vector<pollfd>& poll_args);
 void handle_listening_socket(
   const int& fd,
   std::vector<Conn*>& fd2conn,
@@ -26,6 +26,10 @@ void handle_listening_socket(
 void handle_connection_socket(
   std::vector<Conn*>& fd2conn, const std::vector<pollfd>& poll_args
 );
+Conn* handle_accept(const int& fd);
+bool try_one_request(Conn *conn);
+void handle_read(Conn *conn);
+void handle_write(Conn *conn);
   
 //namespace async
 }

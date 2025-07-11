@@ -40,8 +40,9 @@ int main() {
     std::cerr << "Error: " << e.what() << std::endl;
     return 1;
   }
+  
 
- while (true) {
+  while (true) {
     try {
       async::prepare_poll_args(fd, fd2conn, poll_args);
       async::wait_for_read(poll_args);
