@@ -6,7 +6,7 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 
-#include "utils.h"
+#include "utils/utils.h"
 
 
 static int32_t query(const int& fd, const char *text);
