@@ -110,12 +110,12 @@ Conn* handle_accept(const int& fd) {
   return conn;
 }
 
-static void buf_append(std::vector<uint8_t> &buf, const uint8_t *data, size_t len) {
-  buf.insert(buf.end(), data, data+len);
+static void buf_consume(std::vector<uint8_t> &buf, size_t n) {
+  buf.erase(buf.begin(), buf.begin() + n);
 }
 
-static void buf_consume(std::vector<uint8_t> &buf, size_t n) {
-  buf.erase(buf.begin(), buf.begin()+n);
+static void buf_append(std::vector<uint8_t> &buf, const uint8_t *data, size_t n) {
+  buf.insert(buf.end(), data, data + n);
 }
 
 bool try_one_request(Conn *conn) {
@@ -142,27 +142,11 @@ bool try_one_request(Conn *conn) {
   return true;
 }
 
-void handle_read(Conn *conn) {
-  uint8_t buf[64 * 1024];
-  ssize_t rv = read(conn->fd, buf, sizeof(buf));
-  if (rv < 0) {
-    conn->want_close = true;
-    std::cerr << "Error: Cannot read file descriptor" << std::endl;
-    return;
-  }
-
-  buf_append(conn->incoming, buf, (size_t)rv);
-  try_one_request(conn);
-
-  if (conn->outgoing.size() > 0) {
-    conn->want_read = false;
-    conn->want_write = true;
-  }
-}
-
 void handle_write(Conn *conn) {
   assert(conn->outgoing.size() > 0);
   ssize_t rv = write(conn->fd, conn->outgoing.data(), conn->outgoing.size());
+  if (rv < 0 and EAGAIN) return;
+
   if (rv < 0) {
     conn->want_close = true;
     std::cerr << "Error: Cannot write to file descriptor" << std::endl;
@@ -176,6 +160,39 @@ void handle_write(Conn *conn) {
     conn->want_write = false;
   }
 } 
+
+void handle_read(Conn *conn) {
+  uint8_t buf[64 * 1024];
+  ssize_t rv = read(conn->fd, buf, sizeof(buf));
+  if (rv < 0 and errno == EAGAIN) return;
+
+  if (rv < 0) {
+    conn->want_close = true;
+    std::cerr << "Error: Cannot read file descriptor" << std::endl;
+    return;
+  }
+
+  if (rv == 0) {
+    if (conn->incoming.size() == 0) {
+      std::cout << "Client closed" << std::endl;
+    } else {
+      std::string error = "Unexpected end of file";
+      throw std::runtime_error(error);
+    }
+    conn->want_close = true;
+    return;
+  }
+
+  buf_append(conn->incoming, buf, (size_t)rv);
+  while (try_one_request(conn)) {};
+
+  if (conn->outgoing.size() > 0) {
+    conn->want_read = false;
+    conn->want_write = true;
+    return handle_write(conn);
+  }
+}
+
  
 //namespace async
 }
